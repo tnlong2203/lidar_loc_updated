@@ -121,8 +121,8 @@ void LidarFusionLocalization::initialPoseCallback(const geometry_msgs::PoseWithC
 
     auto initial_pose = map_manager_->getInitialPose(map_x, map_y, yaw);
     scan_manager_->setLidarPose(initial_pose);
+    scan_manager_->setLastGoodPose(initial_pose); // Accept initial_pose as last_good_pose_
 
-    // clear_countdown_ = 30;
     is_publish_last_tf_ = false;
     printf("[LidarFusionLocalization]: initialPoseCallback: [x: %.5f; y: %.5f; yaw: %.5f]\n\n", map_x, map_y, yaw);
 }

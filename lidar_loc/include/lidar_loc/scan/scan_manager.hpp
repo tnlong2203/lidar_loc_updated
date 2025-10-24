@@ -23,6 +23,7 @@ public:
 
     void setRobotMoving(bool moving);
     void setMatchingScoreThreshold(double threshold);
+    void setLastGoodPose(const std::array<double, 3>& pose);
 
 private:
     std::shared_ptr<MapManager> map_manager_;
@@ -70,5 +71,6 @@ private:
     int deg_rotation_;
 
     std::shared_ptr<sensor_msgs::PointCloud2> cloud_filtered_;
+    std::array<double, 3> last_good_pose_ = {0.0, 0.0, 0.0};
 };
 #endif // SCAN_MANAGER_HPP

@@ -22,7 +22,7 @@
     <param name="radius_near_obstacles" value="2" />
     <param name="static_obstacle_threshold" value="5" />
     <param name="deg_rotation" value="4" />
-    <param name="matching_score_threshold" value="70.0" />
+    <param name="matching_score_threshold" value="80.0" />
 
     <node name="lidar_loc_node" pkg="lidar_loc" type="lidar_loc_node" output="screen" />
 </launch>
