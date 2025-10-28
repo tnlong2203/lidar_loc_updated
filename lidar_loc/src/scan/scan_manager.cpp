@@ -19,25 +19,6 @@ ScanManager::ScanManager(ros::NodeHandle& nh, std::shared_ptr<MapManager> map_ma
     printf("[ScanManager]: Using [%s SEARCH] for lidar pose estimation.\n", use_full_search_ ? "FULL" : "SIMPLE");
     printf("[ScanManager]: Rotation step for FULL SEARCH: [%d DEGREES]\n", deg_rotation_);
     printf("[ScanManager]: Initialized.\n");
-
-    // Initialize last_good_pose_ from parameter server
-    double init_x = 0.0, init_y = 0.0, init_yaw = 0.0;
-    nh.param("init_pose_x", init_x, 0.0);
-    nh.param("init_pose_y", init_y, 0.0);
-    nh.param("init_pose_yaw", init_yaw, 0.0);
-    last_good_pose_ = {init_x, init_y, init_yaw};
-}
-
-// --- Pose locking variables ---
-static double matching_score_threshold = 80.0; // can be set externally
-static bool robot_is_moving = true;
-bool last_good_pose_valid_ = false;
-
-void ScanManager::setRobotMoving(bool moving) {
-    robot_is_moving = moving;
-}
-void ScanManager::setMatchingScoreThreshold(double threshold) {
-    matching_score_threshold = threshold;
 }
 
 void ScanManager::calculateLidarPose(
@@ -47,28 +28,11 @@ void ScanManager::calculateLidarPose(
     auto filtered_scan_points = eraseNewlyDetectedObstacles(laser_scan, tf_map_to_laser);
     auto value = convertToPointCloud2(filtered_scan_points, laser_frame, laser_scan->header.stamp, 0, 255, 0);
     cloud_filtered_ = std::make_shared<sensor_msgs::PointCloud2>(value);
-
-    // --- Strict pose locking logic ---
-    if (!robot_is_moving && accurate_score_ >= matching_score_threshold && last_good_pose_valid_) {
-        // Robot is stationary, score is high, and we have a valid pose: lock to last_good_pose_
-        lidar_x_ = last_good_pose_[0];
-        lidar_y_ = last_good_pose_[1];
-        lidar_yaw_ = last_good_pose_[2];
-        // Do NOT run scan-matching or update pose
+    if (use_full_search_) {
+        updateLidarPoseFull(filtered_scan_points);
     } else {
-        // Otherwise, run scan-matching
-        if (use_full_search_) {
-            updateLidarPoseFull(filtered_scan_points);
-        } else {
-            updateLidarPoseSimple(filtered_scan_points);
-        }
-        // Save last good pose if score is high and robot is moving
-        if (accurate_score_ >= matching_score_threshold && robot_is_moving) {
-            last_good_pose_ = {lidar_x_, lidar_y_, lidar_yaw_};
-            last_good_pose_valid_ = true;
-        }
+        updateLidarPoseSimple(filtered_scan_points);
     }
-
     matching_scores_[0].print("[ScanManager]: Raw Scan");
     matching_scores_[1].print("[ScanManager]: Filtered Scan");
 }
@@ -90,6 +54,8 @@ sensor_msgs::PointCloud2 ScanManager::getCloudFiltered()const{
         throw std::runtime_error("[ScanManager]: Cloud filtered is not set.");
     }
 }
+
+float ScanManager::getAccurateScore() const { return accurate_score_; }
 
 std::vector<cv::Point2f> ScanManager::eraseNewlyDetectedObstacles(
     const sensor_msgs::LaserScan::ConstPtr& laser_scan,
@@ -319,9 +285,4 @@ void ScanManager::updateLidarPoseFull(const std::vector<cv::Point2f>& filtered_s
     lidar_y_ += best_dy;
     lidar_yaw_ += best_dyaw;
     lidar_yaw_ = normalizeAngle(lidar_yaw_);
-}
-
-void ScanManager::setLastGoodPose(const std::array<double, 3>& pose) {
-    last_good_pose_ = pose;
-    last_good_pose_valid_ = true;
 }

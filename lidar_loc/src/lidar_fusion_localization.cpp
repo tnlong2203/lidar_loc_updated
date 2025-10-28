@@ -1,7 +1,8 @@
 #include "lidar_loc/lidar_fusion_localization.hpp"
 
-bool LidarFusionLocalization::transformMapToLaserFrame(const ros::Time& stamp, tf2::Transform& tf_map_to_laser){
+bool LidarFusionLocalization::transformMapToLaserFrame(tf2::Transform& tf_map_to_laser){
     // 1. Get the transform from map to base_link
+
     geometry_msgs::TransformStamped map_to_base;
     try {
         map_to_base = tfBuffer_.lookupTransform(map_frame_, base_frame_, ros::Time(0), ros::Duration(0.5));
@@ -13,7 +14,10 @@ bool LidarFusionLocalization::transformMapToLaserFrame(const ros::Time& stamp, t
         tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
         pose_robot_lastest_[2] = yaw;
 
-        printf("[LidarFusionLocalization]: POSE OF ROBOT: [x: %.5f; y: %.5f; yaw: %.5f]\n", pose_robot_lastest_[0], pose_robot_lastest_[1], pose_robot_lastest_[2]);
+        // Print for comparison
+        printf("[LidarFusionLocalization]: POSE OF ROBOT: [x: %.5f; y: %.5f; yaw: %.5f] | GOOD_ROBOT_POSE: [x: %.5f; y: %.5f; yaw: %.5f]\n",
+            pose_robot_lastest_[0], pose_robot_lastest_[1], pose_robot_lastest_[2],
+            good_robot_pose_[0], good_robot_pose_[1], good_robot_pose_[2]);
     } catch (tf2::TransformException& ex) {
         ROS_WARN("[LidarFusionLocalization]: Failed to get transform from map to base_frame: %s", ex.what());
         return false; // Return false if transform cannot be found
@@ -21,8 +25,7 @@ bool LidarFusionLocalization::transformMapToLaserFrame(const ros::Time& stamp, t
     // 2. Get the transform from base_frame to laser_frame
     geometry_msgs::TransformStamped base_to_laser;
     try {
-        base_to_laser = tfBuffer_.lookupTransform(base_frame_, laser_frame_, stamp, ros::Duration(0.5));
-        // base_to_laser = tfBuffer_.lookupTransform(base_frame_, laser_frame_, ros::Time(0));
+        base_to_laser = tfBuffer_.lookupTransform(base_frame_, laser_frame_, ros::Time(0), ros::Duration(0.5));
     } catch (tf2::TransformException& ex) {
         ROS_WARN("[LidarFusionLocalization]: Failed to get transform from base_frame to laser_frame: %s", ex.what());
         return false; // Return false if transform cannot be found
@@ -79,25 +82,28 @@ void LidarFusionLocalization::scanCallback(const sensor_msgs::LaserScan::ConstPt
         printf("[LidarFusionLocalization]: Map is not ready yet, cannot process scan data.\n");
         return;
     }
-
-    // Set robot moving status for scan manager
-    scan_manager_->setRobotMoving(odom_manager_->isStopped() == 0);
-    // Optionally set score threshold from param (once)
-    static bool threshold_set = false;
-    if (!threshold_set) {
-        double score_threshold = 80.0;
-        ros::param::get("~matching_score_threshold", score_threshold);
-        scan_manager_->setMatchingScoreThreshold(score_threshold);
-        threshold_set = true;
-    }
-
     tf2::Transform tf_map_to_laser;
-    if(!transformMapToLaserFrame(msg->header.stamp, tf_map_to_laser)){
+    if(!transformMapToLaserFrame(tf_map_to_laser)){
         return; // Failed to get valid transform
     }
-
+    bool robot_stopped = odom_manager_->isStopped();
+    if (robot_stopped) {
+        scan_manager_->setLidarPose(good_lidar_pose_); // Lock pose to good pose
+        // Prevent scan matching update when stopped
+        pub_filtered_points_.publish(scan_manager_->getCloudFiltered());
+        clear_costmaps_duration(duration_clear_costmap_);
+        calculatePoseTF(false);
+        printf("____________________________________________\n");
+        return;
+    }
     scan_manager_->calculateLidarPose(msg, tf_map_to_laser, laser_frame_);
     pub_filtered_points_.publish(scan_manager_->getCloudFiltered());
+
+    // Check score and update good pose
+    if (scan_manager_->getAccurateScore() > lidar_score_threshold_) {
+        good_lidar_pose_ = scan_manager_->getLidarPose();
+        good_robot_pose_ = pose_robot_lastest_; // Save current robot pose as good_robot_pose
+    }
 
     clear_costmaps_duration(duration_clear_costmap_);//when robot is stopped, clear costmaps after 3 seconds
 
@@ -121,8 +127,9 @@ void LidarFusionLocalization::initialPoseCallback(const geometry_msgs::PoseWithC
 
     auto initial_pose = map_manager_->getInitialPose(map_x, map_y, yaw);
     scan_manager_->setLidarPose(initial_pose);
-    scan_manager_->setLastGoodPose(initial_pose); // Accept initial_pose as last_good_pose_
+    good_lidar_pose_ = initial_pose; // Set as good pose
 
+    // clear_countdown_ = 30;
     is_publish_last_tf_ = false;
     printf("[LidarFusionLocalization]: initialPoseCallback: [x: %.5f; y: %.5f; yaw: %.5f]\n\n", map_x, map_y, yaw);
 }
@@ -198,6 +205,9 @@ tf2::Transform LidarFusionLocalization::getOdomToMapTransform(geometry_msgs::Tra
 void LidarFusionLocalization::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 {
     map_manager_->updateMap(msg);
+    if(!map_manager_->is_ok()){
+        printf("[LidarFusionLocalization]: Map is not ready yet, cannot calculate pose TF.\n");
+    }
     tf2::Quaternion q;
     q.setRPY(0, 0, init_yaw_);
     geometry_msgs::PoseWithCovarianceStamped init_pose;
@@ -220,8 +230,8 @@ void LidarFusionLocalization::odomCallback(const nav_msgs::Odometry::ConstPtr& m
 }
 
 LidarFusionLocalization::LidarFusionLocalization(ros::NodeHandle& nh): 
-    ExecutionTimer("LidarFusionLocalization"),
-    tfListener_(tfBuffer_), max_queue_size_(10), pose_robot_lastest_({0.0, 0.0, 0.0})
+    ExecutionTimer("LidarFusionLocalization"),tfBuffer_(), tfListener_(tfBuffer_), 
+    max_queue_size_(10), pose_robot_lastest_({0.0, 0.0, 0.0}), is_set_initial_pose_(false)
 {
     // Load parameters from the parameter server
     nh.param("init_pose_x", init_x_, -3.0);
@@ -256,6 +266,14 @@ LidarFusionLocalization::LidarFusionLocalization(ros::NodeHandle& nh):
     map_manager_ = std::make_shared<MapManager>();
     scan_manager_ = std::make_unique<ScanManager>(nh, map_manager_);
     odom_manager_ = std::make_unique<OdomManager>();
+    ros::Rate rate(10);
+    while (ros::ok() && !tfBuffer_.canTransform("odom", "base_footprint", ros::Time(0), ros::Duration(0.1))) {
+        printf("Waiting for transform from odom to base_footprint...\n");
+        rate.sleep();
+    }
+
+    nh.param<double>("lidar_score_threshold", lidar_score_threshold_, 0.7);
+    good_lidar_pose_ = {init_x_, init_y_, init_yaw_}; // Set initial pose as good pose
 }
 
 

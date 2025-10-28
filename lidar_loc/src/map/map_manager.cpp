@@ -219,6 +219,7 @@ void MapManager::updateMap(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
     printf("[MapManager ]: Map resolution: [%.2f METER/PIXEL]\n", map_msg_->info.resolution);
     printf("[MapManager ]: Initialized.\n");
 }
+
 bool MapManager::is_ok() const {
     return is_map_ready_;
 }

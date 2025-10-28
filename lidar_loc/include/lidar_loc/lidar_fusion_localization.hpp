@@ -43,6 +43,9 @@ class LidarFusionLocalization: public ExecutionTimer
 {
 public:
     LidarFusionLocalization(ros::NodeHandle& nh);
+    // Add getter for good_lidar_pose_
+    std::array<double, 3> getGoodLidarPose() const { return good_lidar_pose_; }
+    std::array<double, 3> getGoodRobotPose() const { return good_robot_pose_; }
 private:
     std::string base_frame_;
     std::string odom_frame_;
@@ -59,7 +62,7 @@ private:
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr& msg);
     void clear_costmaps_duration(int duration);
 
-    bool transformMapToLaserFrame(const ros::Time& stamp, tf2::Transform& tf_map_to_laser);
+    bool transformMapToLaserFrame(tf2::Transform& tf_map_to_laser);
     std::array<double,3> pose_robot_lastest_;
 
     tf2_ros::Buffer tfBuffer_;
@@ -101,5 +104,10 @@ private:
     std::unique_ptr<ScanManager> scan_manager_;
     std::unique_ptr<OdomManager> odom_manager_;
 
+    bool is_set_initial_pose_;
+
+    double lidar_score_threshold_;
+    std::array<double, 3> good_lidar_pose_;
+    std::array<double, 3> good_robot_pose_;
 };
 #endif // LIDAR_LOCALIZATION_HPP
