@@ -6,7 +6,7 @@
     <param name="duration_clear_costmap" value="3" />
     <param name="base_frame" value="base_footprint" />
     <param name="map_frame" value="map" />
-    <param name="laser_frame" value="armbot_laser_scanner" />
+    <param name="laser_frame" value="base_laser" />
     <param name="odom_frame" value="odom" />
 
     <param name="map_topic" value="map" />
