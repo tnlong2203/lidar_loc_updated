@@ -272,6 +272,21 @@ LidarFusionLocalization::LidarFusionLocalization(ros::NodeHandle& nh):
         rate.sleep();
     }
 
+    // Publish initial map->odom transform at startup
+    geometry_msgs::TransformStamped map_to_odom_msg;
+    map_to_odom_msg.header.stamp = ros::Time::now();
+    map_to_odom_msg.header.frame_id = map_frame_;
+    map_to_odom_msg.child_frame_id = odom_frame_;
+    map_to_odom_msg.transform.translation.x = 0.0;
+    map_to_odom_msg.transform.translation.y = 0.0;
+    map_to_odom_msg.transform.translation.z = 0.0;
+    map_to_odom_msg.transform.rotation.x = 0.0;
+    map_to_odom_msg.transform.rotation.y = 0.0;
+    map_to_odom_msg.transform.rotation.z = 0.0;
+    map_to_odom_msg.transform.rotation.w = 1.0;
+    static tf2_ros::TransformBroadcaster br;
+    br.sendTransform(map_to_odom_msg);
+
     nh.param<double>("lidar_score_threshold", lidar_score_threshold_, 0.7);
     good_lidar_pose_ = {init_x_, init_y_, init_yaw_}; // Set initial pose as good pose
 }
