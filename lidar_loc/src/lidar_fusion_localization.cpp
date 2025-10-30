@@ -99,10 +99,15 @@ void LidarFusionLocalization::scanCallback(const sensor_msgs::LaserScan::ConstPt
     scan_manager_->calculateLidarPose(msg, tf_map_to_laser, laser_frame_);
     pub_filtered_points_.publish(scan_manager_->getCloudFiltered());
 
-    // Check score and update good pose
-    if (scan_manager_->getAccurateScore() > lidar_score_threshold_) {
+    float score = scan_manager_->getAccurateScore();
+    // Only update good pose if score is above threshold
+    if (score > lidar_score_threshold_) {
         good_lidar_pose_ = scan_manager_->getLidarPose();
-        good_robot_pose_ = pose_robot_lastest_; // Save current robot pose as good_robot_pose
+        good_robot_pose_ = pose_robot_lastest_;
+    } else {
+        // If score is too low, lock robot pose to last good pose to prevent drift
+        scan_manager_->setLidarPose(good_lidar_pose_);
+        pose_robot_lastest_ = good_robot_pose_;
     }
 
     clear_costmaps_duration(duration_clear_costmap_);//when robot is stopped, clear costmaps after 3 seconds

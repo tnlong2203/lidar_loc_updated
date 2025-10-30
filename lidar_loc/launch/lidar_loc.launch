@@ -6,7 +6,7 @@
     <param name="duration_clear_costmap" value="3" />
     <param name="base_frame" value="base_footprint" />
     <param name="map_frame" value="map" />
-    <param name="laser_frame" value="base_laser" />
+    <param name="laser_frame" value="armbot_laser_scanner" />
     <param name="odom_frame" value="odom" />
 
     <param name="map_topic" value="map" />
@@ -22,7 +22,7 @@
     <param name="radius_near_obstacles" value="2" />
     <param name="static_obstacle_threshold" value="5" />
     <param name="deg_rotation" value="4" />
-    <param name="lidar_score_threshold" value="0.7" />
+    <param name="lidar_score_threshold" value="0.5" />
 
     <node name="lidar_loc_node" pkg="lidar_loc" type="lidar_loc_node" output="screen" />
 </launch>
